@@ -1,33 +1,39 @@
 import pandas as pd
-from data.db import Database
 from dotenv import load_dotenv
-import psycopg2
+from sqlalchemy import create_engine
 import os
-
+import json
 load_dotenv()
 
 
 class Load:
 
     def __init__(self):
-        self.db_uri = os.getenv("DATABASE_URL")
-        self.client = psycopg2.connect(self.db_uri)
+        self.db_uri = os.getenv(
+            "DATABASE_URL",
+            "postgresql://airflow:airflow@postgres_db:5432/data_warehouse",
+        )
+        self.engine = create_engine(self.db_uri)
 
-    
     def close(self) -> None:
-        """Encerra a conexão com o PostgreSQL, se necessário"""
-        self.client.close()
-        
+        """Encerra o engine, se necessário (o SQLAlchemy gerencia o pool automaticamente)"""
+        if self.engine:
+            self.engine.dispose()
 
-    def load(self, dados: list[dict]):
-        """Converte a lista de dicionários em DataFrame e carrega no PostgreSQL."""
+    def load(self, dados, if_exists="append") -> None:
+        """Converte os dados recebidos em DataFrame e carrega no PostgreSQL com segurança."""
         if not dados:
             return
-            
+
+        if isinstance(dados, str):
+            dados = json.loads(dados)
+
         df = pd.DataFrame(dados)
-        
-        db = Database()
-        engine = db.get_engine()
-        
-        df.to_sql('tb_macro_indicadores', con=engine, if_exists='replace', index=False)
+
+        df.to_sql(
+            "tb_macro_indicadores",
+            con=self.engine,
+            if_exists=if_exists,
+            index=False,
+        )
 
