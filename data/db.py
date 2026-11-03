@@ -5,7 +5,7 @@ import os
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/mydatabase")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/data_warehouse")
 
 class Database:
     def __init__(self):

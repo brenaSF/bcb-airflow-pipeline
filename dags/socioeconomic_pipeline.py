@@ -3,10 +3,11 @@ from airflow.decorators import dag, task
 from src.extract import Extract
 from src.transform import Transform
 from src.load import Load
+import pandas as pd
 
 @dag(
     dag_id="bcb_macro_pipeline",
-    description='Pipeline ETL de indicadores macroeconômicos do Banco Central',
+    description='Pipeline ETL para Selic e IPCA via API do Banco Central',
     schedule="@monthly",
     start_date=datetime(2026, 1, 1),
     catchup=False,
@@ -15,22 +16,39 @@ from src.load import Load
         "retries": 2,
         "retry_delay": timedelta(minutes=1),
     },
-    tags=["bcb", "etl", "macroeconomia"],
+    tags=['financeiro', 'bcb', 'etl'],
 )
 def bcb_etl():
 
     @task
-    def extrair_api() -> list[dict]:
+    def extrair_api(variavel: int) -> list[dict]:
         """Extrai dados da API do Banco Central."""
         extract = Extract()
         try:
-            return extract.bcb()
+            return extract.bcb(variavel=variavel)
         finally:
             extract.close()
 
+    
     @task
-    def carregar_postgres_raw(dados: list[dict]) -> list[dict]:
-        """Carrega os dados brutos no PostgreSQL e os repassa no fluxo."""
+    def transformar_dados(dados_selic: list[dict], dados_ipca: list[dict]) -> str:
+        """Transforma e faz o merge de Selic e IPCA em uma única base unificada por data."""
+        transform = Transform()
+        
+        df_selic = transform.transform_indicador(dados_selic, nome_coluna="selic")
+        
+        transform_ipca = Transform()
+        df_ipca = transform_ipca.transform_indicador(dados_ipca, nome_coluna="ipca")
+        
+        df_merged = pd.merge(df_selic, df_ipca, on='data', how='outer')
+        
+        df_merged = df_merged.sort_values('data').reset_index(drop=True)
+        
+        return df_merged.to_json(orient="records", date_format="iso")
+    
+    @task
+    def carregar_postgres_raw(dados):
+        """Carrega os dados consolidados no PostgreSQL."""
         load = Load()
         try:
             load.load(dados)
@@ -38,16 +56,17 @@ def bcb_etl():
             load.close()
         return dados
 
-    @task
-    def transformar(data: list[dict]) -> str:
-        """Transforma os dados brutos em DataFrame e serializa em JSON para o XCom."""
-        transform = Transform()
-        df = transform.transform_bnc(data)
-        return df.to_json(orient="records", date_format="iso")
 
-    # Fluxo de tarefas
-    raw_data = extrair_api()
-    dados_carregados = carregar_postgres_raw(raw_data)
-    transformar(dados_carregados)
+   # 1. Selic (Variável 11)
+    raw_selic = extrair_api(variavel=11)
+    #load_selic = carregar_postgres_raw(raw_selic)
+
+    # 2. IPCA (Variável 433)
+    raw_ipca = extrair_api(variavel=433)
+
+    dados_consolidados = transformar_dados(raw_selic, raw_ipca)
+
+    carregar_postgres_raw(dados_consolidados)
+
 
 bcb_etl()
