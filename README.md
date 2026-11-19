@@ -56,18 +56,22 @@ Aplicação web interativa para visualização de gráficos de evolução tempor
 
 
 ```sh
+# 1. subir o banco de dados
+docker compose up -d postgres
 
-docker compose run --rm airflow-webserver airflow db init
+# 2. criar tabela de metadados
+docker compose run --rm airflow-webserver airflow db migrate
 
+# 3. criar usuário admin
 docker compose run --rm airflow-webserver airflow users create \
     --username admin \
-    --firstname Brena \
-    --lastname Freitas \
+    --firstname Teste \
+    --lastname Silva \
     --role Admin \
     --email admin@example.com \
     --password admin
 
-    
+# 4. subir todos os serviços  
 docker compose up -d
 
 ```
